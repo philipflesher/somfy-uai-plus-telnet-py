@@ -1,0 +1,3 @@
+"""
+Somfy UAI+ telnet client
+"""

@@ -1,0 +1,19 @@
+[project]
+name = "somfy_uai_plus_telnet"
+version = "0.1.0"
+authors = [
+    {name = "Philip Flesher", email = "philip@fleshers.org"},
+]
+description = "Telnet client to interface with the Somfy UAI+"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.9"
+]
+dependencies = [
+    "telnetlib3>=2.0.3",
+    "async_timeout>=4.0.2"
+]
