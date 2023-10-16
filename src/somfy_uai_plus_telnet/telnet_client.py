@@ -19,6 +19,14 @@ class GroupInfo:
     def __init__(self, name: str):
         self.name: str = name
 
+class InvalidUserException(Exception):
+    """Error indicating invalid user specified."""
+
+class InvalidPasswordException(Exception):
+    """Error indicating invalid password specified."""
+
+class ReaderClosedException(Exception):
+    """Error indicating that the connection was closed."""
 
 USER_PROMPT = "User:"
 PASSWORD_PROMPT = "Password:"
@@ -45,8 +53,9 @@ class TelnetClient:
         self._user_prompt_received: bool = False
         self._password_prompt_received: bool = False
         self._connection_negotiated: bool = False
+        self._connection_negotiation_event: Event = Event()
+        self._reader_closed_exception: ReaderClosedException = None
         self._next_request_id: int = 0
-        self._pending_commands: list(str) = []
         self._responses_by_request_id: dict(int, dict(str, any)) = {}
         self._async_on_connection_ready = async_on_connection_ready
         self._async_on_disconnected = async_on_disconnected
@@ -58,8 +67,9 @@ class TelnetClient:
         self._user_prompt_received = False
         self._password_prompt_received = False
         self._connection_negotiated = False
+        self._connection_negotiation_event.clear()
+        self._reader_closed_exception = None
         self._next_request_id = 0
-        self._pending_commands = []
         self._responses_by_request_id = {}
         self._read_loop_finished.clear()
 
@@ -81,6 +91,11 @@ class TelnetClient:
             self._writer = None
         await self._read_loop_finished.wait()
 
+    async def async_wait_for_connection_establishment(self) -> None:
+        await self._connection_negotiation_event.wait()
+        if self._reader_closed_exception is not None:
+            raise self._reader_closed_exception
+
     async def _read_loop(self, reader, writer) -> None:
         """Async loop to read data received from the telnet server;
         sets device state as a result of data received."""
@@ -100,7 +115,7 @@ class TelnetClient:
                 if not self._connection_negotiated:
                     if output.startswith(USER_PROMPT):
                         if self._user_prompt_received:
-                            raise Exception("Received duplicate User prompt.")
+                            raise InvalidUserException()
                         self._user_prompt_received = True
                         output = output[len(USER_PROMPT) :]
                         await self._async_send_command(self._user, True)
@@ -110,7 +125,7 @@ class TelnetClient:
                                 "Received Password prompt without User prompt."
                             )
                         if self._password_prompt_received:
-                            raise Exception("Received duplicate Password prompt.")
+                            raise InvalidPasswordException()
                         self._password_prompt_received = True
                         output = output[len(PASSWORD_PROMPT) :]
                         await self._async_send_command(self._password, True)
@@ -120,11 +135,6 @@ class TelnetClient:
                         await self._async_notify_connection_ready()
 
                 if self._connection_negotiated:
-                    if len(self._pending_commands) > 0:
-                        for cmd in self._pending_commands:
-                            await self._async_send_command(cmd)
-                        self._pending_commands = []
-
                     # Parse the complete lines from the output
                     output_lines = output.split("\n")
                     output = output_lines[len(output_lines) - 1]
@@ -137,11 +147,11 @@ class TelnetClient:
                         json_response: dict = json.loads(output_line)
                         if "result" in json_response:
                             self._set_response(
-                                json_response["id"], json_response["result"], None
+                                json_response["id"], json_response["result"], None, None
                             )
                         else:
                             self._set_response(
-                                json_response["id"], None, json_response["error"]
+                                json_response["id"], None, json_response["error"], None
                             )
 
             except Exception as ex:
@@ -149,29 +159,33 @@ class TelnetClient:
                 exception = ex
                 break
 
+        self._connection_negotiated = False
         self._read_loop_finished.set()
         self._reader = None
+        self._reader_closed_exception = ReaderClosedException("Connection to the server was closed.", exception)
         await self._async_notify_disconnected()
-
-        if exception is not None:
-            raise RuntimeError("Error in reader loop") from exception
+        for request_id in list(self._responses_by_request_id.keys()):
+            self._set_response(
+                request_id, None, None, self._reader_closed_exception
+            )
 
     async def _async_notify_connection_ready(self):
         await self._async_on_connection_ready()
+        self._connection_negotiation_event.set()
 
     async def _async_notify_disconnected(self):
-        await self._async_on_disconnected()
+        await self._async_on_disconnected(self._reader_closed_exception)
+        self._connection_negotiation_event.set()
 
     async def _async_send_command(self, command: str, send_now: bool = False) -> None:
         """Sends given command to the server. Automatically appends
         CR to the command string. If connection has not yet been
-        negotiated, appends the command to a queue of commands to
-        send after connection has finished negotiating."""
+        negotiated, raises an exception."""
         if self._connection_negotiated or send_now:
             self._writer.write(command + "\r")
             await self._writer.drain()
         else:
-            self._pending_commands.append(command)
+            raise Exception("Connection has not been successfully negotiated yet.")
 
     def _get_next_request_id(self) -> int:
         self._next_request_id += 1
@@ -181,12 +195,13 @@ class TelnetClient:
         self._responses_by_request_id[request_id] = {"event": Event()}
 
     def _set_response(
-        self, request_id: int, response: dict(str, any), error_response: any
+        self, request_id: int, response: dict(str, any), error_response: any, reader_closed_exception: ReaderClosedException
     ):
         response_data = self._responses_by_request_id.pop(request_id, None)
         if response_data is not None:
             response_data["response"] = response
             response_data["error_response"] = error_response
+            response_data["reader_closed_exception"] = reader_closed_exception
             response_data["event"].set()
 
     async def _async_get_response(self, request_id: int) -> str:
@@ -194,12 +209,14 @@ class TelnetClient:
         await response_data["event"].wait()
         if response_data["response"] is not None:
             return response_data["response"]
-        else:
+        elif response_data["error_response"] is not None:
             raise Exception(
                 "Error response received: {error}".format(
                     error=response_data["error_response"]
                 )
             )
+        else:
+            raise response_data["reader_closed_exception"]
 
     async def _async_send_request_and_await_response(
         self, request: str
