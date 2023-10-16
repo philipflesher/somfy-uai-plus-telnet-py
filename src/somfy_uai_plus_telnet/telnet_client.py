@@ -27,6 +27,11 @@ class InvalidPasswordException(Exception):
 
 class ReaderClosedException(Exception):
     """Error indicating that the connection was closed."""
+    def __init__(self, message: str, cause: Exception):
+        super(Exception, self).__init__(message, cause)
+        self.message = message
+        self.cause = cause
+
 
 USER_PROMPT = "User:"
 PASSWORD_PROMPT = "Password:"
