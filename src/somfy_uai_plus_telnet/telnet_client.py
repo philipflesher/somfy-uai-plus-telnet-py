@@ -32,6 +32,9 @@ class ReaderClosedException(Exception):
         self.message = message
         self.cause = cause
 
+class ErrorResponseException(Exception):
+    """Error indicating that the request as sent to the server was invalid."""
+
 
 USER_PROMPT = "User:"
 PASSWORD_PROMPT = "Password:"
@@ -215,7 +218,7 @@ class TelnetClient:
         if response_data["response"] is not None:
             return response_data["response"]
         elif response_data["error_response"] is not None:
-            raise Exception(
+            raise ErrorResponseException(
                 "Error response received: {error}".format(
                     error=response_data["error_response"]
                 )

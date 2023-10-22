@@ -1,6 +1,6 @@
 [project]
 name = "somfy_uai_plus_telnet"
-version = "0.3.0"
+version = "0.4.0"
 authors = [
     {name = "Philip Flesher", email = "philip@fleshers.org"},
 ]
