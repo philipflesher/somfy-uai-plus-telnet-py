@@ -19,18 +19,23 @@ class GroupInfo:
     def __init__(self, name: str):
         self.name: str = name
 
+
 class InvalidUserException(Exception):
     """Error indicating invalid user specified."""
+
 
 class InvalidPasswordException(Exception):
     """Error indicating invalid password specified."""
 
+
 class ReaderClosedException(Exception):
     """Error indicating that the connection was closed."""
+
     def __init__(self, message: str, cause: Exception):
         super(Exception, self).__init__(message, cause)
         self.message = message
         self.cause = cause
+
 
 class ErrorResponseException(Exception):
     """Error indicating that the request as sent to the server was invalid."""
@@ -170,12 +175,12 @@ class TelnetClient:
         self._connection_negotiated = False
         self._read_loop_finished.set()
         self._reader = None
-        self._reader_closed_exception = ReaderClosedException("Connection to the server was closed.", exception)
+        self._reader_closed_exception = ReaderClosedException(
+            "Connection to the server was closed.", exception
+        )
         await self._async_notify_disconnected()
         for request_id in list(self._responses_by_request_id.keys()):
-            self._set_response(
-                request_id, None, None, self._reader_closed_exception
-            )
+            self._set_response(request_id, None, None, self._reader_closed_exception)
 
     async def _async_notify_connection_ready(self):
         await self._async_on_connection_ready()
@@ -203,7 +208,11 @@ class TelnetClient:
         self._responses_by_request_id[request_id] = {"event": Event()}
 
     def _set_response(
-        self, request_id: int, response: dict(str, any), error_response: any, reader_closed_exception: ReaderClosedException
+        self,
+        request_id: int,
+        response: dict(str, any),
+        error_response: any,
+        reader_closed_exception: ReaderClosedException,
     ):
         response_data = self._responses_by_request_id.pop(request_id, None)
         if response_data is not None:
@@ -255,7 +264,7 @@ class TelnetClient:
         return response
 
     async def async_get_groups_for_target(self, target_id: str) -> list(str):
-        """Retreives the target's group IDs"""
+        """Retrieves the target's group IDs"""
         request: str = (
             '"method": "group.get", "params": {{ "targetID": "{target_id}" }}'.format(
                 target_id=target_id
