@@ -1,8 +1,7 @@
 """Classes for communicating with the Somfy UAI+"""
 
 from __future__ import annotations
-from async_timeout import timeout
-from asyncio import create_task, Event, TimeoutError
+from asyncio import create_task, Event, timeout, TimeoutError
 
 import json
 
